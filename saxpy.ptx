@@ -1,0 +1,68 @@
+.version 7.0
+.target sm_80
+.address_size 64
+
+.visible .entry saxpy(
+    .param .f32 a,
+    .param .u64 X_ptr,
+    .param .u64 Y_ptr,
+    .param .u64 Z_ptr,
+    .param .u32 N
+)
+{
+    // params
+    .reg .f32 %r_a;
+    .reg .u64 %r_X_ptr, %r_Y_ptr, %r_Z_ptr;
+    .reg .u32 %r_N;
+
+    ld.param.f32 %r_a, [a];
+    ld.param.u64 %r_X_ptr, [X_ptr];
+    ld.param.u64 %r_Y_ptr, [Y_ptr];
+    ld.param.u64 %r_Z_ptr, [Z_ptr];
+    ld.param.u32 %r_N, [N];
+
+
+    // thread global idx
+    .reg .u32 %threadIdx_x, %blockIdx_x, %blockDim_x;
+
+    mov.u32 %blockIdx_x, %ctaid.x;
+    mov.u32 %blockDim_x, %ntid.x;
+    mov.u32 %threadIdx_x, %tid.x;
+
+    .reg .u32 %idx;
+    mad.lo.u32 %idx, %blockIdx_x, %blockDim_x, %threadIdx_x;
+
+
+    // if idx greate or eq to N, return
+    .reg .pred %ge_N;
+    setp.ge.u32 %ge_N, %idx, %r_N;
+    @%ge_N bra END;
+
+    // compute offset in X, Y and Z buffers
+    .reg .u64 %offset;
+
+    cvt.u64.u32 %offset, %idx;
+    shl.b64 %offset, %offset, 2;
+
+    // compute X_element_ptr, Y_element_ptr and Z_element_ptr
+    .reg .u64 %X_element_ptr, %Y_element_ptr, %Z_element_ptr;
+
+    add.u64 %X_element_ptr, %r_X_ptr, %offset;
+    add.u64 %Y_element_ptr, %r_Y_ptr, %offset;
+    add.u64 %Z_element_ptr, %r_Z_ptr, %offset;
+
+    // load X_element, Y_element from global memory
+    .reg .f32 %X_element, %Y_element;
+    ld.global.f32 %X_element, [%X_element_ptr];
+    ld.global.f32 %Y_element, [%Y_element_ptr];
+
+    // compute
+    .reg .f32 %Z_element;
+    fma.rn.f32 %Z_element, %r_a, %X_element, %Y_element;
+
+    // store Z_element to Z buffer
+    st.global.f32 [%Z_element_ptr], %Z_element;
+
+END:
+    ret;
+}
